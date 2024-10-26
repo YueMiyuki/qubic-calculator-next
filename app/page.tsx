@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -82,8 +82,8 @@ const translations: Translations = {
     calculate: "Calculate",
     epochInfo: "Current Epoch Information",
     currentEpoch: "Current Epoch",
-    epochStart: "Epoch Start (UTC+8)",
-    epochEnd: "Epoch End (UTC+8)",
+    epochStart: "Epoch Start (UTC)",
+    epochEnd: "Epoch End (UTC)",
     epochProgress: "Epoch Progress",
     networkInfo: "Network Information",
     estimatedHashrate: "Estimated Network Hashrate",
@@ -113,8 +113,8 @@ const translations: Translations = {
     calculate: "计算",
     epochInfo: "目前纪元信息",
     currentEpoch: "目前纪元",
-    epochStart: "纪元开始 (UTC+8)",
-    epochEnd: "纪元结束 (UTC+8)",
+    epochStart: "纪元开始 (UTC)",
+    epochEnd: "纪元结束 (UTC)",
     epochProgress: "纪元进度",
     networkInfo: "网络信息",
     estimatedHashrate: "估计网络算力",
@@ -265,8 +265,19 @@ export default function QubicCalculator() {
     });
   };
 
+  const calculateButtonRef = useRef<HTMLButtonElement>(null); 
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (calculateButtonRef.current) {
+        calculateButtonRef.current.click();
+      }
+    }, 200);
+  
+    return () => clearInterval(timer); // Cleanup the timer
+  }, []); // Empty dependency array ensures this runs only on mount and unmount
+
   const formatDate = (date: Date) => {
-    return date.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+    return date.toLocaleString("zh-CN", { timeZone: "UTC" });
   };
 
   const cardVariants = {
@@ -373,7 +384,7 @@ export default function QubicCalculator() {
                         placeholder={t.solsCount}
                       />
                     </div>
-                    <Button onClick={calculateIncome} className="w-full">
+                    <Button ref={calculateButtonRef} onClick={calculateIncome} className="w-full">
                       {t.calculate}
                     </Button>
                   </CardContent>
