@@ -61,7 +61,9 @@ interface Income {
   incomePerOneITS: number;
   dailyIncome: number;
   dailyIncomeBySols: number;
+  dailyIncomeBySolsCal: number;
   curSolPrice: number;
+  curSolPriceCal: number;
   dailySolutions: number;
   luckiness: number;
 }
@@ -99,6 +101,10 @@ const translations: Translations = {
     pressCalculate: "Press Calculate to see income estimates",
     calculator: "Calculator",
     graph: "Graph",
+    donate: "Donate",
+    donateInfo: "If you'd like to donate, here are my addresses:",
+    qubicAddress: "Qubic Address",
+    erc20Address: "ERC-20 Address",
   },
   zh: {
     title: "Qubic 收益计算器",
@@ -126,6 +132,10 @@ const translations: Translations = {
     pressCalculate: "点击计算查看收益估算",
     calculator: "计算器",
     graph: "图表",
+    donate: "捐赠",
+    donateInfo: "如果您想捐赠，这里是我的地址：",
+    qubicAddress: "Qubic 地址",
+    erc20Address: "ERC-20 地址",
   },
 };
 
@@ -139,6 +149,7 @@ export default function QubicCalculator() {
   const [error, setError] = useState<string>("");
   const [language, setLanguage] = useState<"en" | "zh">("en");
   const [qubicPrice, setQubicPrice] = useState<number>(0);
+  const [method, setMethod] = useState<"method1" | "method2">("method1");
 
   const t = translations[language];
 
@@ -204,21 +215,34 @@ export default function QubicCalculator() {
     const poolReward = 0.85;
     const netHashrate = networkStats.estimatedIts;
     const netAvgScores = networkStats.averageScore;
+    const netTotalScoreArray = networkStats.scores;
 
     // Calculate total scores
     const netSolsPerHourCalc = networkStats.solutionsPerHourCalculated;
 
+    // Method 1: Calculate by network average score
     const curSolPrice =
       (1 / netAvgScores / 1.1) * 1035500000 * 0.92 * qubicPrice;
+
+    // Method 2: Calculate by total score / 676
+    const totalScore = netTotalScoreArray.reduce((total, obj) => total + obj.score, 0);
+    const netTotalScore = totalScore / 676;
+
+    const curSolPriceCal =
+      (1 / netTotalScore / 1.1) * 1035500000 * 0.92 * qubicPrice;
 
     const incomePerOneITS =
       poolReward * qubicPrice * (782000000000 / netHashrate / 7 / 1.06);
     const dailyIncome = Number(hashrate) * incomePerOneITS;
 
     let dailyIncomeBySols = 0;
-
     if (solsCount) {
       dailyIncomeBySols = Number(solsCount) * curSolPrice;
+    }
+
+    let dailyIncomeBySolsCal = 0;
+    if (solsCount) {
+      dailyIncomeBySolsCal = Number(solsCount) * curSolPriceCal;
     }
 
     const dailySolutionsCalc =
@@ -233,7 +257,9 @@ export default function QubicCalculator() {
       incomePerOneITS,
       dailyIncome,
       dailyIncomeBySols,
+      dailyIncomeBySolsCal,
       curSolPrice,
+      curSolPriceCal,
       dailySolutions: dailySolutionsCalc,
       luckiness,
     });
@@ -316,6 +342,7 @@ export default function QubicCalculator() {
           <TabsList>
             <TabsTrigger value="calculator">{t.calculator}</TabsTrigger>
             <TabsTrigger value="graph">{t.graph}</TabsTrigger>
+            <TabsTrigger value="donate">{t.donate}</TabsTrigger>
           </TabsList>
           <TabsContent value="calculator">
             <div className="grid gap-8 md:grid-cols-2">
@@ -325,7 +352,7 @@ export default function QubicCalculator() {
                 animate="visible"
                 transition={{ duration: 0.5, delay: 0.2 }}
               >
-                <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300">
+                <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 h-full">
                   <CardHeader>
                     <CardTitle>{t.hashrate}</CardTitle>
                   </CardHeader>
@@ -474,8 +501,22 @@ export default function QubicCalculator() {
                 transition={{ duration: 0.5, delay: 0.8 }}
               >
                 <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 h-full">
-                  <CardHeader>
+                  <CardHeader className="flex justify-between items-center">
                     <CardTitle>{t.incomeEstimate}</CardTitle>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => setMethod("method1")}
+                        variant={method === "method1" ? "default" : "ghost"}
+                      >
+                        Average score
+                      </Button>
+                      <Button
+                        onClick={() => setMethod("method2")}
+                        variant={method === "method2" ? "default" : "ghost"}
+                      >
+                        Total score / 676
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent>
                     {income ? (
@@ -499,18 +540,26 @@ export default function QubicCalculator() {
                           </TableRow>
                           <TableRow>
                             <TableCell className="font-medium">
-                              {t.dailyIncomeBySols}
+                              {method === "method1"
+                                ? t.dailyIncomeBySols
+                                : "Estimated Solutions Income"}
                             </TableCell>
                             <TableCell>
-                              ${income.dailyIncomeBySols.toFixed(2)}
+                              ${method === "method1"
+                                ? income.dailyIncomeBySols.toFixed(2)
+                                : income.dailyIncomeBySolsCal.toFixed(2)}
                             </TableCell>
                           </TableRow>
                           <TableRow>
                             <TableCell className="font-medium">
-                              {t.solIncome}
+                              {method === "method1"
+                                ? t.solIncome
+                                : "Estimated Income per Solution"}
                             </TableCell>
                             <TableCell>
-                              ${income.curSolPrice.toFixed(2)}
+                              ${method === "method1"
+                                ? income.curSolPrice.toFixed(2)
+                                : income.curSolPriceCal.toFixed(2)}
                             </TableCell>
                           </TableRow>
                           <TableRow>
@@ -539,6 +588,44 @@ export default function QubicCalculator() {
           </TabsContent>
           <TabsContent value="graph">
             {networkStats && <NetworkGraphs networkStats={networkStats} />}
+          </TabsContent>
+          <TabsContent value="donate">
+            <div className="grid gap-8 md:grid-cols-1 mt-8">
+              <motion.div
+                variants={cardVariants}
+                initial="hidden"
+                animate="visible"
+                transition={{ duration: 0.5, delay: 1.0 }}
+              >
+                <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 h-full">
+                  <CardHeader>
+                    <CardTitle>{t.donateInfo}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <Table>
+                      <TableBody>
+                        <TableRow>
+                          <TableCell className="font-medium">
+                            {t.qubicAddress}
+                          </TableCell>
+                          <TableCell>
+                            UOSGCOLKQANTLABVKQWUVZCPIXYBEKQWWGARBDAVSGAGGTWCZZKBDDAEBDXK
+                          </TableCell>
+                        </TableRow>
+                        <TableRow>
+                          <TableCell className="font-medium">
+                            {t.erc20Address}
+                          </TableCell>
+                          <TableCell>
+                            0x9d2b0b8e9C8A3F41415545CF7dB4627b50c52285
+                          </TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </div>
           </TabsContent>
         </Tabs>
 
