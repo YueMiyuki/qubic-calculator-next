@@ -16,9 +16,31 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CoinGeckoClient } from "@/lib/coingecko";
-import { NetworkGraphs } from "@/components/network-graphs";
 import { Github } from "lucide-react";
 import Link from "next/link";
+import { useTheme } from "next-themes";
+import { Line } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  TooltipItem,
+} from "chart.js";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+);
 
 interface NetworkStats {
   scores: Array<{
@@ -61,9 +83,7 @@ interface Income {
   incomePerOneITS: number;
   dailyIncome: number;
   dailyIncomeBySols: number;
-  dailyIncomeBySolsCal: number;
   curSolPrice: number;
-  curSolPriceCal: number;
   dailySolutions: number;
   luckiness: number;
 }
@@ -72,6 +92,14 @@ interface Translations {
   [key: string]: {
     [key: string]: string;
   };
+}
+
+interface DataPoint {
+  time: number;
+  EstimatedIts?: number;
+  solutionsPerHour?: number;
+  TotalCurrent?: number;
+  totalScores?: number;
 }
 
 const translations: Translations = {
@@ -105,6 +133,11 @@ const translations: Translations = {
     donateInfo: "If you'd like to donate, here are my addresses:",
     qubicAddress: "Qubic Address",
     erc20Address: "ERC-20 Address",
+    difficulty: "Difficulty",
+    createdAt: "Created At",
+    estimatedIts: "Estimated ITs",
+    solsPerHour: "Solutions per Hour",
+    totalScore: "Total Score",
   },
   zh: {
     title: "Qubic 收益计算器",
@@ -136,6 +169,11 @@ const translations: Translations = {
     donateInfo: "如果您想捐赠，这里是我的地址：",
     qubicAddress: "Qubic 地址",
     erc20Address: "ERC-20 地址",
+    difficulty: "难度",
+    createdAt: "创建于",
+    estimatedIts: "估计 ITs",
+    solsPerHour: "每小时Solution",
+    totalScore: "总分数",
   },
 };
 
@@ -149,7 +187,11 @@ export default function QubicCalculator() {
   const [error, setError] = useState<string>("");
   const [language, setLanguage] = useState<"en" | "zh">("en");
   const [qubicPrice, setQubicPrice] = useState<number>(0);
-  const [method, setMethod] = useState<"method1" | "method2">("method1");
+  const [itsData, setItsData] = useState<DataPoint[]>([]);
+  const [solsData, setSolsData] = useState<DataPoint[]>([]);
+  const [scoresData, setScoresData] = useState<DataPoint[]>([]);
+
+  const { theme } = useTheme();
 
   const t = translations[language];
 
@@ -178,6 +220,19 @@ export default function QubicCalculator() {
       const cgClient = new CoinGeckoClient();
       const price = await cgClient.getPrice("qubic-network", "usd");
       setQubicPrice(price);
+
+      // Fetch new graph data
+      const itsResponse = await fetch("/api/graph/its");
+      const solsResponse = await fetch("/api/graph/sols");
+      const scoresResponse = await fetch("/api/graph/scores");
+
+      const itsData = await itsResponse.json();
+      const solsData = await solsResponse.json();
+      const scoresData = await scoresResponse.json();
+
+      setItsData(itsData);
+      setSolsData(solsData);
+      setScoresData(scoresData);
     } catch (error) {
       console.error("Error fetching data:", error);
       setError(t.error);
@@ -215,21 +270,10 @@ export default function QubicCalculator() {
     const poolReward = 0.85;
     const netHashrate = networkStats.estimatedIts;
     const netAvgScores = networkStats.averageScore;
-    const netTotalScoreArray = networkStats.scores;
-
-    // Calculate total scores
     const netSolsPerHourCalc = networkStats.solutionsPerHourCalculated;
 
-    // Method 1: Calculate by network average score
     const curSolPrice =
       (1 / netAvgScores / 1.1) * 1035500000 * 0.92 * qubicPrice;
-
-    // Method 2: Calculate by total score / 676
-    const totalScore = netTotalScoreArray.reduce((total, obj) => total + obj.score, 0);
-    const netTotalScore = totalScore / 676;
-
-    const curSolPriceCal =
-      (1 / netTotalScore / 1.1) * 1035500000 * 0.92 * qubicPrice;
 
     const incomePerOneITS =
       poolReward * qubicPrice * (782000000000 / netHashrate / 7 / 1.06);
@@ -238,11 +282,6 @@ export default function QubicCalculator() {
     let dailyIncomeBySols = 0;
     if (solsCount) {
       dailyIncomeBySols = Number(solsCount) * curSolPrice;
-    }
-
-    let dailyIncomeBySolsCal = 0;
-    if (solsCount) {
-      dailyIncomeBySolsCal = Number(solsCount) * curSolPriceCal;
     }
 
     const dailySolutionsCalc =
@@ -257,32 +296,175 @@ export default function QubicCalculator() {
       incomePerOneITS,
       dailyIncome,
       dailyIncomeBySols,
-      dailyIncomeBySolsCal,
       curSolPrice,
-      curSolPriceCal,
       dailySolutions: dailySolutionsCalc,
       luckiness,
     });
   };
 
-  const calculateButtonRef = useRef<HTMLButtonElement>(null); 
+  const calculateButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const timer = setInterval(() => {
       if (calculateButtonRef.current) {
         calculateButtonRef.current.click();
       }
     }, 200);
-  
-    return () => clearInterval(timer); // Cleanup the timer
-  }, []); // Empty dependency array ensures this runs only on mount and unmount
+
+    return () => clearInterval(timer);
+  }, []);
 
   const formatDate = (date: Date) => {
     return date.toLocaleString("zh-CN", { timeZone: "UTC" });
   };
 
+  const formatTimestamp = (timestamp: number) => {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+    });
+  };
+
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0 },
+  };
+
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: {
+        type: "category" as const,
+        ticks: {
+          color:
+            theme === "dark"
+              ? "rgba(255, 255, 255, 0.8)"
+              : "rgba(0, 0, 0, 0.8)",
+        },
+        grid: {
+          color:
+            theme === "dark"
+              ? "rgba(255, 255, 255, 0.1)"
+              : "rgba(0, 0, 0, 0.1)",
+        },
+      },
+      y: {
+        beginAtZero: true,
+        ticks: {
+          color:
+            theme === "dark"
+              ? "rgba(255, 255, 255, 0.8)"
+              : "rgba(0, 0, 0, 0.8)",
+        },
+        grid: {
+          color:
+            theme === "dark"
+              ? "rgba(255, 255, 255, 0.1)"
+              : "rgba(0, 0, 0, 0.1)",
+        },
+      },
+    },
+    plugins: {
+      legend: {
+        display: false,
+      },
+      tooltip: {
+        backgroundColor:
+          theme === "dark" ? "rgba(0, 0, 0, 0.8)" : "rgba(255, 255, 255, 0.8)",
+        titleColor:
+          theme === "dark" ? "rgba(255, 255, 255, 1)" : "rgba(0, 0, 0, 1)",
+        bodyColor:
+          theme === "dark" ? "rgba(255, 255, 255, 0.8)" : "rgba(0, 0, 0, 0.8)",
+        callbacks: {
+          label: function (context: TooltipItem<"line">) {
+            let label = context.dataset.label || "";
+            if (label) {
+              label += ": ";
+            }
+            if (context.parsed.y !== null) {
+              label += context.parsed.y.toFixed(2);
+            }
+            return label;
+          },
+        },
+      },
+    },
+  };
+
+  const getChartColors = () => {
+    return {
+      borderColor:
+        theme === "dark"
+          ? "rgba(255, 255, 255, 0.8)"
+          : "var(--primary-border-color)",
+      backgroundColor:
+        theme === "dark"
+          ? "rgba(255, 255, 255, 0.1)"
+          : "var(--primary-background-color)",
+    };
+  };
+
+  const itsChartData = {
+    labels: itsData.map((d) => formatTimestamp(d.time)),
+    datasets: [
+      {
+        label: "Estimated ITs",
+        data: itsData.map((d) => d.EstimatedIts),
+        borderJoinStyle: "round" as CanvasLineJoin,
+        ...getChartColors(),
+      },
+    ],
+  };
+
+  const solsChartData = {
+    labels: solsData.map((d) => formatTimestamp(d.time)),
+    datasets: [
+      {
+        label: "Solutions per Hour",
+        data: solsData.map((d) => d.solutionsPerHour),
+        borderJoinStyle: "round" as CanvasLineJoin,
+        ...getChartColors(),
+      },
+    ],
+  };
+
+  const scoresChartData = {
+    labels: scoresData.map((d) => formatTimestamp(d.time)),
+    datasets: [
+      {
+        label: "Total Scores",
+        data: scoresData.map((d) => d.totalScores),
+        borderJoinStyle: "round" as CanvasLineJoin,
+        ...getChartColors(),
+      },
+    ],
+  };
+
+  const scoresChartOptions = {
+    ...chartOptions,
+    scales: {
+      ...chartOptions.scales,
+      y: {
+        type: "linear" as const,
+        display: true,
+        position: "left" as const,
+        ticks: {
+          color:
+            theme === "dark"
+              ? "rgba(255, 255, 255, 0.8)"
+              : "rgba(0, 0, 0, 0.8)",
+        },
+        grid: {
+          color:
+            theme === "dark"
+              ? "rgba(255, 255, 255, 0.1)"
+              : "rgba(0, 0, 0, 0.1)",
+        },
+      },
+    },
   };
 
   if (loading) {
@@ -384,7 +566,11 @@ export default function QubicCalculator() {
                         placeholder={t.solsCount}
                       />
                     </div>
-                    <Button ref={calculateButtonRef} onClick={calculateIncome} className="w-full">
+                    <Button
+                      ref={calculateButtonRef}
+                      onClick={calculateIncome}
+                      className="w-full"
+                    >
                       {t.calculate}
                     </Button>
                   </CardContent>
@@ -485,13 +671,13 @@ export default function QubicCalculator() {
                         </TableRow>
                         <TableRow>
                           <TableCell className="font-medium">
-                            Difficulty
+                            {t.difficulty}
                           </TableCell>
                           <TableCell>{networkStats?.difficulty}</TableCell>
                         </TableRow>
                         <TableRow>
                           <TableCell className="font-medium">
-                            Created At
+                            {t.createdAt}
                           </TableCell>
                           <TableCell>
                             {new Date(
@@ -512,22 +698,8 @@ export default function QubicCalculator() {
                 transition={{ duration: 0.5, delay: 0.8 }}
               >
                 <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 h-full">
-                  <CardHeader className="flex justify-between items-center">
+                  <CardHeader>
                     <CardTitle>{t.incomeEstimate}</CardTitle>
-                    <div className="flex gap-2">
-                      <Button
-                        onClick={() => setMethod("method1")}
-                        variant={method === "method1" ? "default" : "ghost"}
-                      >
-                        Average score
-                      </Button>
-                      <Button
-                        onClick={() => setMethod("method2")}
-                        variant={method === "method2" ? "default" : "ghost"}
-                      >
-                        Total score / 676
-                      </Button>
-                    </div>
                   </CardHeader>
                   <CardContent>
                     {income ? (
@@ -551,26 +723,18 @@ export default function QubicCalculator() {
                           </TableRow>
                           <TableRow>
                             <TableCell className="font-medium">
-                              {method === "method1"
-                                ? t.dailyIncomeBySols
-                                : "Estimated Solutions Income"}
+                              {t.dailyIncomeBySols}
                             </TableCell>
                             <TableCell>
-                              ${method === "method1"
-                                ? income.dailyIncomeBySols.toFixed(2)
-                                : income.dailyIncomeBySolsCal.toFixed(2)}
+                              ${income.dailyIncomeBySols.toFixed(2)}
                             </TableCell>
                           </TableRow>
                           <TableRow>
                             <TableCell className="font-medium">
-                              {method === "method1"
-                                ? t.solIncome
-                                : "Estimated Income per Solution"}
+                              {t.solIncome}
                             </TableCell>
                             <TableCell>
-                              ${method === "method1"
-                                ? income.curSolPrice.toFixed(2)
-                                : income.curSolPriceCal.toFixed(2)}
+                              ${income.curSolPrice.toFixed(2)}
                             </TableCell>
                           </TableRow>
                           <TableRow>
@@ -598,7 +762,40 @@ export default function QubicCalculator() {
             </div>
           </TabsContent>
           <TabsContent value="graph">
-            {networkStats && <NetworkGraphs networkStats={networkStats} />}
+            <div className="grid gap-6 md:grid-cols-2 mt-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t.estimatedIts}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[300px]">
+                    <Line options={chartOptions} data={itsChartData} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>{t.solsPerHour}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[300px]">
+                    <Line options={chartOptions} data={solsChartData} />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="md:col-span-2">
+                <CardHeader>
+                  <CardTitle>{t.totalScore}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[300px]">
+                    <Line options={scoresChartOptions} data={scoresChartData} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
           <TabsContent value="donate">
             <div className="grid gap-8 md:grid-cols-1 mt-8">
@@ -606,7 +803,7 @@ export default function QubicCalculator() {
                 variants={cardVariants}
                 initial="hidden"
                 animate="visible"
-                transition={{ duration: 0.5, delay: 1.0 }}
+                transition={{ duration: 0.3, delay: 0.2 }}
               >
                 <Card className="shadow-lg hover:shadow-xl transition-shadow duration-300 h-full">
                   <CardHeader>
